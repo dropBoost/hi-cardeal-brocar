@@ -1,0 +1,223 @@
+-- =========================================================
+-- ESTENSIONE UTILE PER UUID
+-- =========================================================
+create extension if not exists pgcrypto;
+
+-- =========================================================
+-- FUNZIONE GENERICA PER updated_at
+-- =========================================================
+create or replace function public.handle_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+-- =========================================================
+-- TABELLA PRINCIPALE: veicolo
+-- =========================================================
+create table public.veicolo (
+  id uuid primary key default gen_random_uuid(),
+
+  -- identificazione
+  external_id text not null unique,
+  stock_number text,
+  vin text unique,
+  license_plate text,
+
+  -- campi obbligatori feed/catalogo
+  title text not null,
+  description text not null,
+
+  availability text not null
+    check (availability in ('in stock', 'out of stock')),
+
+  condition text not null
+    check (condition in ('new', 'used')),
+
+  price numeric(12,2) not null
+    check (price >= 0),
+
+  currency text not null default 'EUR'
+    check (currency in ('EUR')),
+
+  link text not null,
+  image_link text,
+
+  brand text not null,
+  model text not null,
+
+  vehicle_year integer not null
+    check (vehicle_year between 1900 and 2100),
+
+  mileage_value integer not null
+    check (mileage_value >= 0),
+
+  mileage_unit text not null default 'KM'
+    check (mileage_unit in ('KM')),
+
+  -- campi facoltativi / consigliati
+  vehicle_type text,
+
+  fuel_type text
+    check (
+      fuel_type is null or
+      fuel_type in ('petrol', 'diesel', 'electric', 'hybrid', 'lpg', 'cng')
+    ),
+
+  transmission text
+    check (
+      transmission is null or
+      transmission in ('manual', 'automatic', 'semi-automatic')
+    ),
+
+  body_style text
+    check (
+      body_style is null or
+      body_style in ('sedan', 'suv', 'hatchback', 'wagon', 'coupe', 'convertible', 'van')
+    ),
+
+  exterior_color text,
+  interior_color text,
+
+  engine_size numeric(6,2)
+    check (engine_size is null or engine_size >= 0),
+
+  drivetrain text
+    check (
+      drivetrain is null or
+      drivetrain in ('fwd', 'rwd', 'awd', '4wd')
+    ),
+
+  doors integer
+    check (doors is null or doors >= 1),
+
+  seller_name text,
+  seller_phone text,
+  seller_email text,
+  seller_address text,
+
+  latitude numeric(10,7)
+    check (latitude is null or (latitude >= -90 and latitude <= 90)),
+
+  longitude numeric(10,7)
+    check (longitude is null or (longitude >= -180 and longitude <= 180)),
+
+  state_of_vehicle text,
+  trim text,
+
+  engine_power integer
+    check (engine_power is null or engine_power >= 0),
+
+  engine_power_unit text
+    check (
+      engine_power_unit is null or
+      engine_power_unit in ('HP', 'CV', 'kW')
+    ),
+
+  date_first_registration date,
+  emissions_standard text,
+
+  co2_emissions integer
+    check (co2_emissions is null or co2_emissions >= 0),
+
+  -- stato interno gestionale
+  status text not null default 'available'
+    check (status in ('available', 'reserved', 'sold', 'hidden')),
+
+  is_active boolean not null default true,
+  published_to_meta boolean not null default false,
+
+  -- localizzazione
+  location_city text,
+  location_region text,
+  location_country text default 'IT',
+
+  notes text,
+
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- =========================================================
+-- TABELLA MEDIA: veicolo_media
+-- =========================================================
+create table public.veicolo_media (
+  id uuid primary key default gen_random_uuid(),
+  id_veicolo uuid not null references public.veicolo(id) on delete cascade,
+
+  url text not null,
+  alt_text text,
+  ordine integer not null default 0,
+  principale boolean not null default false,
+  is_active boolean not null default true,
+
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- =========================================================
+-- TABELLA OPTIONAL: veicolo_optional
+-- =========================================================
+create table public.veicolo_optional (
+  id uuid primary key default gen_random_uuid(),
+  id_veicolo uuid not null references public.veicolo(id) on delete cascade,
+
+  nome text not null,
+  valore text,
+  is_active boolean not null default true,
+
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- =========================================================
+-- INDICI TABELLA veicolo
+-- =========================================================
+create index idx_veicolo_external_id on public.veicolo(external_id);
+create index idx_veicolo_brand on public.veicolo(brand);
+create index idx_veicolo_model on public.veicolo(model);
+create index idx_veicolo_vehicle_year on public.veicolo(vehicle_year);
+create index idx_veicolo_price on public.veicolo(price);
+create index idx_veicolo_condition on public.veicolo(condition);
+create index idx_veicolo_availability on public.veicolo(availability);
+create index idx_veicolo_status on public.veicolo(status);
+create index idx_veicolo_fuel_type on public.veicolo(fuel_type);
+create index idx_veicolo_transmission on public.veicolo(transmission);
+create index idx_veicolo_body_style on public.veicolo(body_style);
+create index idx_veicolo_is_active on public.veicolo(is_active);
+create index idx_veicolo_published_to_meta on public.veicolo(published_to_meta);
+
+-- =========================================================
+-- INDICI TABELLA veicolo_media
+-- =========================================================
+create index idx_veicolo_media_id_veicolo on public.veicolo_media(id_veicolo);
+create index idx_veicolo_media_principale on public.veicolo_media(principale);
+create index idx_veicolo_media_ordine on public.veicolo_media(ordine);
+
+-- =========================================================
+-- INDICI TABELLA veicolo_optional
+-- =========================================================
+create index idx_veicolo_optional_id_veicolo on public.veicolo_optional(id_veicolo);
+create index idx_veicolo_optional_nome on public.veicolo_optional(nome);
+
+-- =========================================================
+-- TRIGGER updated_at
+-- =========================================================
+create trigger trg_veicolo_updated_at
+before update on public.veicolo
+for each row
+execute function public.handle_updated_at();
+
+create trigger trg_veicolo_media_updated_at
+before update on public.veicolo_media
+for each row
+execute function public.handle_updated_at();
+
+create trigger trg_veicolo_optional_updated_at
+before update on public.veicolo_optional
+for each row
+execute function public.handle_updated_at();
