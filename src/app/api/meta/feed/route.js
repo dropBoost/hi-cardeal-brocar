@@ -37,15 +37,26 @@ function buildVehicleLink(vehicle) {
   return buildAbsoluteUrl(`/veicoli/${vehicle.id}`);
 }
 
+function isValidHttpUrl(value) {
+  if (!value) return false;
+
+  try {
+    const url = new URL(String(value));
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function getPublicImageUrl(supabase, mediaRow) {
-  if (mediaRow.url) return mediaRow.url;
-  if (mediaRow.public_url) return mediaRow.public_url;
-  if (mediaRow.link) return mediaRow.link;
+  if (isValidHttpUrl(mediaRow.url)) return mediaRow.url;
+  if (isValidHttpUrl(mediaRow.public_url)) return mediaRow.public_url;
+  if (isValidHttpUrl(mediaRow.link)) return mediaRow.link;
 
   if (mediaRow.path) {
     const bucket = mediaRow.bucket || "veicoli";
     const { data } = supabase.storage.from(bucket).getPublicUrl(mediaRow.path);
-    return data?.publicUrl || "";
+    if (isValidHttpUrl(data?.publicUrl)) return data.publicUrl;
   }
 
   return "";
@@ -134,7 +145,7 @@ async function loadVehicleMedia(supabase, vehicleIds = []) {
 
   const { data, error } = await supabase
     .from("veicolo_media")
-    .select(`*`)
+    .select("*")
     .in("id_veicolo", vehicleIds)
     .eq("is_active", true)
     .order("ordine", { ascending: true });
@@ -232,13 +243,17 @@ function mapVehicleToMetaItem({ supabase, vehicle, mediaRows = [], optionalNames
     longitude: vehicle.longitude ?? "",
     date_first_registration: vehicle.date_first_registration || "",
     co2_emissions: vehicle.co2_emissions ?? "",
+
     location_city: normalizeText(vehicle.location_city),
     location_region: normalizeText(vehicle.location_region),
     location_country: normalizeText(vehicle.location_country),
     notes: normalizeText(vehicle.notes),
-
     optional_names: optionalNames,
   };
+}
+
+function shouldRequireToken() {
+  return process.env.NODE_ENV === "production" && !!process.env.META_FEED_TOKEN;
 }
 
 export async function GET(request) {
@@ -246,8 +261,14 @@ export async function GET(request) {
     const url = new URL(request.url);
     const token = url.searchParams.get("token");
 
-    if (process.env.META_FEED_TOKEN && token !== process.env.META_FEED_TOKEN) {
-      return new Response("Unauthorized", { status: 401 });
+    if (shouldRequireToken() && token !== process.env.META_FEED_TOKEN) {
+      return new Response("Unauthorized", {
+        status: 401,
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-store, max-age=0",
+        },
+      });
     }
 
     const supabase = getSupabaseAdmin();
@@ -276,12 +297,15 @@ export async function GET(request) {
       link: process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
       description: "Feed XML veicoli per catalogo Meta",
       items,
-    });
+    }).trim();
+
+    console.log("[META FEED] Vehicles loaded:", vehicles.length);
+    console.log("[META FEED] Items exported:", items.length);
 
     return new Response(xml, {
       status: 200,
       headers: {
-        "Content-Type": "application/xml; charset=utf-8",
+        "Content-Type": "application/rss+xml; charset=utf-8",
         "Cache-Control": "no-store, max-age=0",
       },
     });
@@ -297,6 +321,7 @@ export async function GET(request) {
         status: 500,
         headers: {
           "Content-Type": "application/json; charset=utf-8",
+          "Cache-Control": "no-store, max-age=0",
         },
       }
     );
