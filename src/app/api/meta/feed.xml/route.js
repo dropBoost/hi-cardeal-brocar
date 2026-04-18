@@ -4,25 +4,18 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-function getSupabaseAdmin() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
-  );
-}
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
-function buildAbsoluteUrl(path = "") {
-  const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    "http://localhost:3000";
-
-  return `${siteUrl.replace(/\/$/, "")}/${String(path).replace(/^\//, "")}`;
-}
+const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  process.env.SITE_URL ||
+  "https://example.com";
 
 function escapeXml(value) {
   if (value === null || value === undefined) return "";
-
   return String(value)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -31,225 +24,244 @@ function escapeXml(value) {
     .replace(/'/g, "&apos;");
 }
 
-function escapeCData(value) {
-  if (value === null || value === undefined) return "";
-  return String(value).replaceAll("]]>", "]]]]><![CDATA[>");
+function tag(name, value) {
+  if (value === null || value === undefined || value === "") return "";
+  return `<${name}>${escapeXml(value)}</${name}>`;
 }
 
-function normalizeText(value) {
-  if (value === null || value === undefined) return "";
-  return String(value).trim();
+function normalizeEnum(value, fallback = "") {
+  if (!value) return fallback;
+  return String(value).trim().toUpperCase();
 }
 
-function normalizePrice(price, currency = "EUR") {
+function formatPrice(price, currency = "EUR") {
   if (price === null || price === undefined || price === "") return "";
-  const num = Number(price);
-  if (Number.isNaN(num)) return "";
-  return `${num.toFixed(2)} ${currency}`;
+  const amount = Number(price).toFixed(2);
+  return `${amount} ${currency}`;
 }
 
-function isValidHttpUrl(value) {
-  if (!value) return false;
+function mapAvailability(vehicle) {
+  // Meta usa esempi come AVAILABLE / SOLD / PENDING nel feed XML ufficiale
+  if (vehicle.status === "sold") return "SOLD";
+  if (vehicle.status === "reserved") return "PENDING";
 
-  try {
-    const url = new URL(String(value));
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
+  if (vehicle.availability === "out of stock") return "SOLD";
+  return "AVAILABLE";
 }
 
-function getPublicImageUrl(supabase, mediaRow) {
-  if (isValidHttpUrl(mediaRow.url)) return mediaRow.url;
-  if (isValidHttpUrl(mediaRow.public_url)) return mediaRow.public_url;
-  if (isValidHttpUrl(mediaRow.link)) return mediaRow.link;
-
-  if (mediaRow.path) {
-    const bucket = mediaRow.bucket || "veicoli";
-    const { data } = supabase.storage.from(bucket).getPublicUrl(mediaRow.path);
-    if (isValidHttpUrl(data?.publicUrl)) return data.publicUrl;
+function mapStateOfVehicle(vehicle) {
+  if (!vehicle.state_of_vehicle) {
+    return vehicle.condition === "new" ? "NEW" : "USED";
   }
 
-  return "";
+  const value = String(vehicle.state_of_vehicle).trim().toLowerCase();
+
+  if (value === "cpo") return "CPO";
+  if (value === "new") return "NEW";
+  if (value === "used") return "USED";
+
+  return vehicle.condition === "new" ? "NEW" : "USED";
 }
 
-function buildVehicleLink(vehicle) {
-  return buildAbsoluteUrl(`/veicoli/${vehicle.id}`);
+function mapCondition(vehicle) {
+  // condition nel feed automotive è la condizione qualitativa del veicolo
+  // Se nel DB hai solo new/used, usiamo EXCELLENT come default sicuro
+  return "EXCELLENT";
 }
 
-async function loadVehicles(supabase) {
-  const { data, error } = await supabase
-    .from("veicolo")
-    .select(`
-      id,
-      external_id,
-      title,
-      description,
-      availability,
-      condition,
-      price,
-      currency,
-      brand,
-      model,
-      vehicle_year,
-      mileage_value,
-      mileage_unit,
-      fuel_type,
-      transmission,
-      body_style,
-      exterior_color,
-      is_active,
-      published_to_meta,
-      status,
-      created_at
-    `)
-    .eq("is_active", true)
-    .eq("published_to_meta", true)
-    .neq("status", "hidden")
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    throw new Error(`Errore caricamento veicoli: ${error.message}`);
-  }
-
-  return data || [];
+function buildVehicleUrl(vehicle) {
+  // Adatta questo path alla route reale del tuo sito
+  return `${SITE_URL}/auto/${encodeURIComponent(vehicle.external_id)}`;
 }
 
-async function loadVehicleMedia(supabase, vehicleIds = []) {
-  if (!vehicleIds.length) return new Map();
+function buildAddressXml(vehicle) {
+  const hasAddressParts =
+    vehicle.seller_address ||
+    vehicle.location_city ||
+    vehicle.location_region ||
+    vehicle.location_country;
 
-  const { data, error } = await supabase
-    .from("veicolo_media")
-    .select("*")
-    .in("id_veicolo", vehicleIds)
-    .eq("is_active", true)
-    .order("ordine", { ascending: true });
+  if (!hasAddressParts) return "";
 
-  if (error) {
-    throw new Error(`Errore caricamento media: ${error.message}`);
-  }
-
-  const mediaMap = new Map();
-
-  for (const row of data || []) {
-    if (!mediaMap.has(row.id_veicolo)) {
-      mediaMap.set(row.id_veicolo, []);
-    }
-    mediaMap.get(row.id_veicolo).push(row);
-  }
-
-  return mediaMap;
+  return `
+    <address format="simple">
+      ${vehicle.seller_address ? `<component name="addr1">${escapeXml(vehicle.seller_address)}</component>` : ""}
+      ${vehicle.location_city ? `<component name="city">${escapeXml(vehicle.location_city)}</component>` : ""}
+      ${vehicle.location_region ? `<component name="region">${escapeXml(vehicle.location_region)}</component>` : ""}
+      ${vehicle.location_country ? `<component name="country">${escapeXml(vehicle.location_country)}</component>` : ""}
+    </address>
+  `;
 }
 
-function buildMinimalRssXml(items) {
-  const itemsXml = items
-    .map((item) => {
-      const imageTags = item.images
-        .map((imageUrl, index) =>
-          index === 0
-            ? `<g:image_link>${escapeXml(imageUrl)}</g:image_link>`
-            : `<g:additional_image_link>${escapeXml(imageUrl)}</g:additional_image_link>`
-        )
-        .join("");
+function buildImagesXml(images) {
+  if (!Array.isArray(images) || images.length === 0) return "";
 
-      const mileageTag =
-        item.mileage_value !== "" && item.mileage_value !== null && item.mileage_value !== undefined
-          ? `<g:mileage>${escapeXml(`${item.mileage_value} ${item.mileage_unit || "KM"}`)}</g:mileage>`
-          : "";
-
-      return `<item>
-<g:id>${escapeXml(item.id)}</g:id>
-<title><![CDATA[${escapeCData(item.title)}]]></title>
-<description><![CDATA[${escapeCData(item.description)}]]></description>
-<g:availability>${escapeXml(item.availability)}</g:availability>
-<g:condition>${escapeXml(item.condition)}</g:condition>
-<g:price>${escapeXml(item.price)}</g:price>
-<link>${escapeXml(item.link)}</link>
-${imageTags}
-<g:make>${escapeXml(item.make)}</g:make>
-<g:model>${escapeXml(item.model)}</g:model>
-<g:year>${escapeXml(item.year)}</g:year>
-${mileageTag}
-<g:fuel_type>${escapeXml(item.fuel_type)}</g:fuel_type>
-<g:transmission>${escapeXml(item.transmission)}</g:transmission>
-<g:body_style>${escapeXml(item.body_style)}</g:body_style>
-<g:exterior_color>${escapeXml(item.exterior_color)}</g:exterior_color>
-</item>`;
+  return images
+    .slice(0, 20)
+    .map((image, index) => {
+      const imageTag = index === 0 ? "Exterior" : "Gallery";
+      return `
+        <image>
+          <url>${escapeXml(image.url)}</url>
+          <tag>${escapeXml(imageTag)}</tag>
+        </image>
+      `;
     })
     .join("");
+}
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0">
-  <channel>
-    <title>Catalogo Veicoli</title>
-    <link>${escapeXml(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000")}</link>
-    <description>Feed XML veicoli per catalogo Meta</description>
-    ${itemsXml}
-  </channel>
-</rss>`;
+function buildListingXml(vehicle) {
+  const images = Array.isArray(vehicle.veicolo_media) ? vehicle.veicolo_media : [];
+  if (images.length === 0) return "";
+
+  const url = buildVehicleUrl(vehicle);
+  const price = formatPrice(vehicle.price, vehicle.currency || "EUR");
+  const availability = mapAvailability(vehicle);
+  const stateOfVehicle = mapStateOfVehicle(vehicle);
+  const condition = mapCondition(vehicle);
+
+  return `
+    <listing>
+      ${tag("vehicle_id", vehicle.external_id)}
+      ${tag("vehicle_registration_plate", vehicle.license_plate)}
+      ${tag("vin", vehicle.vin)}
+      ${tag("title", vehicle.title)}
+      ${tag("description", vehicle.description)}
+      ${tag("url", url)}
+      ${tag("make", vehicle.brand)}
+      ${tag("model", vehicle.model)}
+      ${tag("year", vehicle.vehicle_year)}
+      ${vehicle.trim ? tag("trim", vehicle.trim) : ""}
+      <mileage>
+        ${tag("value", vehicle.mileage_value)}
+        ${tag("unit", normalizeEnum(vehicle.mileage_unit, "KM"))}
+      </mileage>
+      ${buildImagesXml(images)}
+      ${vehicle.transmission ? tag("transmission", normalizeEnum(vehicle.transmission)) : ""}
+      ${vehicle.fuel_type ? tag("fuel_type", normalizeEnum(vehicle.fuel_type)) : ""}
+      ${vehicle.body_style ? tag("body_style", normalizeEnum(vehicle.body_style)) : ""}
+      ${vehicle.drivetrain ? tag("drivetrain", normalizeEnum(vehicle.drivetrain)) : ""}
+      ${tag("condition", condition)}
+      ${tag("price", price)}
+      ${buildAddressXml(vehicle)}
+      ${vehicle.latitude !== null && vehicle.latitude !== undefined ? tag("latitude", vehicle.latitude) : ""}
+      ${vehicle.longitude !== null && vehicle.longitude !== undefined ? tag("longitude", vehicle.longitude) : ""}
+      ${vehicle.exterior_color ? tag("exterior_color", vehicle.exterior_color) : ""}
+      ${vehicle.interior_color ? tag("interior_colour", vehicle.interior_color) : ""}
+      ${tag("availability", availability)}
+      ${tag("state_of_vehicle", stateOfVehicle)}
+      ${vehicle.date_first_registration ? tag("date_first_registration", vehicle.date_first_registration) : ""}
+      ${vehicle.emissions_standard ? tag("emissions_standard", vehicle.emissions_standard) : ""}
+      ${vehicle.co2_emissions !== null && vehicle.co2_emissions !== undefined ? tag("co2_emissions", vehicle.co2_emissions) : ""}
+      ${vehicle.stock_number ? tag("stock_number", vehicle.stock_number) : ""}
+      ${vehicle.seller_name ? tag("dealer_name", vehicle.seller_name) : ""}
+      ${vehicle.seller_phone ? tag("dealer_phone", vehicle.seller_phone) : ""}
+      ${vehicle.seller_email ? tag("dealer_email", vehicle.seller_email) : ""}
+      ${tag("dealer_id", vehicle.external_id)}
+    </listing>
+  `;
 }
 
 export async function GET() {
   try {
-    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("veicolo")
+      .select(`
+        id,
+        external_id,
+        stock_number,
+        vin,
+        license_plate,
+        title,
+        description,
+        availability,
+        condition,
+        price,
+        currency,
+        brand,
+        model,
+        vehicle_year,
+        mileage_value,
+        mileage_unit,
+        vehicle_type,
+        fuel_type,
+        transmission,
+        body_style,
+        exterior_color,
+        interior_color,
+        drivetrain,
+        seller_name,
+        seller_phone,
+        seller_email,
+        seller_address,
+        latitude,
+        longitude,
+        state_of_vehicle,
+        trim,
+        date_first_registration,
+        emissions_standard,
+        co2_emissions,
+        status,
+        is_active,
+        published_to_meta,
+        location_city,
+        location_region,
+        location_country,
+        veicolo_media!inner (
+          id,
+          url,
+          alt_text,
+          ordine,
+          principale,
+          is_active
+        )
+      `)
+      .eq("is_active", true)
+      .eq("published_to_meta", true)
+      .neq("status", "hidden")
+      .eq("veicolo_media.is_active", true)
+      .order("created_at", { ascending: false })
+      .order("principale", { foreignTable: "veicolo_media", ascending: false })
+      .order("ordine", { foreignTable: "veicolo_media", ascending: true });
 
-    const vehicles = await loadVehicles(supabase);
-    const vehicleIds = vehicles.map((v) => v.id);
-    const mediaMap = await loadVehicleMedia(supabase, vehicleIds);
+    if (error) {
+      throw error;
+    }
 
-    const items = vehicles
-      .map((vehicle) => {
-        const images = (mediaMap.get(vehicle.id) || [])
-          .map((row) => getPublicImageUrl(supabase, row))
-          .filter(Boolean);
+    const vehicles = (data || []).filter(
+      (vehicle) =>
+        Array.isArray(vehicle.veicolo_media) &&
+        vehicle.veicolo_media.length > 0
+    );
 
-        if (!images.length) return null;
+    const listingsXml = vehicles.map(buildListingXml).filter(Boolean).join("");
 
-        return {
-          id: normalizeText(vehicle.external_id || vehicle.id),
-          title: normalizeText(vehicle.title),
-          description: normalizeText(vehicle.description),
-          availability: normalizeText(vehicle.availability),
-          condition: normalizeText(vehicle.condition),
-          price: normalizePrice(vehicle.price, vehicle.currency),
-          link: buildVehicleLink(vehicle),
-          images,
-          make: normalizeText(vehicle.brand),
-          model: normalizeText(vehicle.model),
-          year: vehicle.vehicle_year || "",
-          mileage_value: vehicle.mileage_value ?? "",
-          mileage_unit: normalizeText(vehicle.mileage_unit || "KM"),
-          fuel_type: normalizeText(vehicle.fuel_type),
-          transmission: normalizeText(vehicle.transmission),
-          body_style: normalizeText(vehicle.body_style),
-          exterior_color: normalizeText(vehicle.exterior_color),
-        };
-      })
-      .filter(Boolean);
-
-    const xml = buildMinimalRssXml(items).trim();
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<listings>
+  <title>${escapeXml("Catalogo Veicoli")}</title>
+  <link rel="self" href="${escapeXml(`${SITE_URL}/api/meta/feed.xml`)}" />
+  ${listingsXml}
+</listings>`;
 
     return new Response(xml, {
       status: 200,
       headers: {
-        "Content-Type": "application/xml; charset=utf-8",
-        "Content-Disposition": 'inline; filename="meta-feed.xml"',
-        "Cache-Control": "public, max-age=0, s-maxage=0",
-        "X-Content-Type-Options": "nosniff",
+        "Content-Type": "application/xml; charset=UTF-8",
+        "Cache-Control": "no-store, max-age=0",
       },
     });
   } catch (error) {
-    return new Response(
-      `<?xml version="1.0" encoding="UTF-8"?><error>${escapeXml(
-        error.message || "Errore generazione feed"
-      )}</error>`,
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/xml; charset=utf-8",
-          "Cache-Control": "no-store, max-age=0",
-        },
-      }
-    );
+    const xmlError = `<?xml version="1.0" encoding="UTF-8"?>
+<error>
+  <message>${escapeXml(error.message || "Errore generazione feed XML")}</message>
+</error>`;
+
+    return new Response(xmlError, {
+      status: 500,
+      headers: {
+        "Content-Type": "application/xml; charset=UTF-8",
+        "Cache-Control": "no-store, max-age=0",
+      },
+    });
   }
 }
