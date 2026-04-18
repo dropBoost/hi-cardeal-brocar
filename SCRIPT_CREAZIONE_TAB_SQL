@@ -125,8 +125,8 @@ create table public.veicolo (
     check (co2_emissions is null or co2_emissions >= 0),
 
   -- stato interno gestionale
-  status text not null default 'available'
-    check (status in ('available', 'reserved', 'sold', 'hidden')),
+  status text not null default 'AVAILABLE'
+    check (status in ('AVAILABLE', 'PENDING', 'SOLD')),
 
   is_active boolean not null default true,
   published_to_meta boolean not null default false,

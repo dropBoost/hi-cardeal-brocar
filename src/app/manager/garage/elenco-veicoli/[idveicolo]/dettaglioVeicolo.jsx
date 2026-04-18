@@ -32,10 +32,9 @@ const conditionOptions = [
 ];
 
 const statusOptions = [
-  { value: "available", label: "Disponibile" },
-  { value: "reserved", label: "Prenotato" },
-  { value: "sold", label: "Venduto" },
-  { value: "hidden", label: "Nascosto" },
+  { value: "AVAILABLE", label: "Disponibile" },
+  { value: "PENDING", label: "Prenotato" },
+  { value: "SOLD", label: "Venduto" }
 ];
 
 const vehicleTypeOptions = [

@@ -15,13 +15,17 @@ import SelectComboBox from "@/components/select-combobox";
 import { useSettings } from "@/settings/settingsProvider";
 
 const availabilityOptions = [
-  { value: "in stock", label: "Disponibile" },
-  { value: "out of stock", label: "Non disponibile" },
+  { value: "AVAILABLE", label: "Disponibile" },
+  { value: "PENDING", label: "Prenotato" },
+  { value: "SOLD", label: "Venduto" },
 ];
 
 const conditionOptions = [
-  { value: "new", label: "Nuovo" },
-  { value: "used", label: "Usato" },
+  { value: "excellent", label: "Eccellente" },
+  { value: "very good", label: "Molto buono" },
+  { value: "good", label: "Buono" },
+  { value: "fair", label: "Discreto" },
+  { value: "poor", label: "Da riparare" },
 ];
 
 const fuelTypeOptions = [
@@ -57,10 +61,9 @@ const drivetrainOptions = [
 ];
 
 const statusOptions = [
-  { value: "available", label: "Disponibile" },
-  { value: "reserved", label: "Prenotato" },
-  { value: "sold", label: "Venduto" },
-  { value: "hidden", label: "Nascosto" },
+  { value: "AVAILABLE", label: "Disponibile" },
+  { value: "PENDING", label: "Prenotato" },
+  { value: "SOLD", label: "Venduto" },
 ];
 
 const vehicleTypeOptions = [
@@ -72,11 +75,9 @@ const vehicleTypeOptions = [
 ];
 
 const stateOfVehicleOptions = [
-  { value: "excellent", label: "Eccellente" },
-  { value: "very good", label: "Molto buono" },
-  { value: "good", label: "Buono" },
-  { value: "fair", label: "Discreto" },
-  { value: "poor", label: "Da riparare" },
+  { value: "NEW", label: "Nuovo" },
+  { value: "USED", label: "Usato" },
+  { value: "CPO", label: "Cpo" },
 ];
 
 const emissionsStandardOptions = [

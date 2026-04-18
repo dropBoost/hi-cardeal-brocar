@@ -15,11 +15,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const statusOptions = [
-  { value: "all", label: "Tutti gli stati" },
-  { value: "available", label: "Disponibile" },
-  { value: "reserved", label: "Prenotato" },
-  { value: "sold", label: "Venduto" },
-  { value: "hidden", label: "Nascosto" },
+  { value: "ALL", label: "Tutti gli stati" },
+  { value: "AVAILABLE", label: "Disponibile" },
+  { value: "PENDING", label: "Prenotato" },
+  { value: "SOLD", label: "Venduto" },
 ];
 
 const orderOptions = [
@@ -49,14 +48,12 @@ function formatKm(value, unit = "KM") {
 
 function getStatusBadgeVariant(status) {
   switch (status) {
-    case "available":
+    case "AVAILABLE":
       return "default";
-    case "reserved":
+    case "PENDING":
       return "secondary";
-    case "sold":
+    case "SOLD":
       return "destructive";
-    case "hidden":
-      return "outline";
     default:
       return "outline";
   }
@@ -64,14 +61,12 @@ function getStatusBadgeVariant(status) {
 
 function getStatusLabel(status) {
   switch (status) {
-    case "available":
+    case "AVAILABLE":
       return "Disponibile";
-    case "reserved":
+    case "PENDING":
       return "Prenotato";
-    case "sold":
+    case "SOLD":
       return "Venduto";
-    case "hidden":
-      return "Nascosto";
     default:
       return status || "—";
   }
