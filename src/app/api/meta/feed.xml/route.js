@@ -220,6 +220,7 @@ function buildListingXml(vehicle) {
 
   return `
     <listing>
+      ${tag("link", "https://www.brocar2.it")}
       ${tag("vehicle_id", vehicle.external_id)}
       ${tag("vehicle_registration_plate", vehicle.license_plate)}
       ${tag("vin", vehicle.vin)}
