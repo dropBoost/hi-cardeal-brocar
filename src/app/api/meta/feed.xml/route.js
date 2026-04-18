@@ -232,20 +232,21 @@ export async function GET() {
     return new Response(xml, {
       status: 200,
       headers: {
-        "Content-Type": "application/rss+xml; charset=utf-8",
-        "Cache-Control": "no-store, max-age=0",
+        "Content-Type": "application/xml; charset=utf-8",
+        "Content-Disposition": 'inline; filename="meta-feed.xml"',
+        "Cache-Control": "public, max-age=0, s-maxage=0",
+        "X-Content-Type-Options": "nosniff",
       },
     });
   } catch (error) {
     return new Response(
-      JSON.stringify({
-        ok: false,
-        error: error.message || "Errore generazione feed",
-      }),
+      `<?xml version="1.0" encoding="UTF-8"?><error>${escapeXml(
+        error.message || "Errore generazione feed"
+      )}</error>`,
       {
         status: 500,
         headers: {
-          "Content-Type": "application/json; charset=utf-8",
+          "Content-Type": "application/xml; charset=utf-8",
           "Cache-Control": "no-store, max-age=0",
         },
       }
